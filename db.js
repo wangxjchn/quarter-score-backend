@@ -32,6 +32,34 @@ db.exec(`
     coefficient REAL NOT NULL,
     updated_at  TEXT DEFAULT (datetime('now','localtime'))
   );
+
+  CREATE TABLE IF NOT EXISTS user_teams (
+    user_id     INTEGER NOT NULL,
+    team_id     INTEGER NOT NULL,
+    created_at  TEXT DEFAULT (datetime('now','localtime')),
+    PRIMARY KEY (user_id, team_id),
+    FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
+    FOREIGN KEY (team_id) REFERENCES teams(id) ON DELETE CASCADE
+  );
+
+  CREATE TABLE IF NOT EXISTS job_titles (
+    id         INTEGER PRIMARY KEY AUTOINCREMENT,
+    name       TEXT NOT NULL UNIQUE,
+    created_at TEXT DEFAULT (datetime('now','localtime'))
+  );
+`);
+
+// Migrate: add title_id to users if missing
+const userCols = db.prepare("PRAGMA table_info(users)").all().map(c => c.name);
+if (!userCols.includes('title_id')) {
+  db.exec('ALTER TABLE users ADD COLUMN title_id INTEGER');
+}
+
+// Migrate legacy single-team user data into the user_teams relation table.
+db.exec(`
+  INSERT OR IGNORE INTO user_teams (user_id, team_id)
+  SELECT id, team_id FROM users
+  WHERE team_id IS NOT NULL;
 `);
 
 // Seed default level coefficients

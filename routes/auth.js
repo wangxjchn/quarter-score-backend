@@ -5,9 +5,31 @@ const db      = require('../db');
 const BOOTSTRAP_CODE = 'engineer@cygia.com';
 
 const userSql = `
-  SELECT u.*, t.name AS team_name
-  FROM users u LEFT JOIN teams t ON t.id = u.team_id
+  SELECT u.id, u.employee_id, u.name, u.role, u.level, u.created_at
+  FROM users u
 `;
+
+function withTeams(user) {
+  if (!user) return null;
+  const teams = db.prepare(`
+    SELECT t.id, t.name
+    FROM user_teams ut
+    JOIN teams t ON t.id = ut.team_id
+    WHERE ut.user_id = ?
+    ORDER BY t.name
+  `).all(user.id);
+
+  const team_ids = teams.map((t) => t.id);
+  const team_names = teams.map((t) => t.name);
+
+  return {
+    ...user,
+    teams,
+    team_ids,
+    team_names,
+    team_name: team_names[0] || null,
+  };
+}
 
 // POST /api/auth/login
 router.post('/login', (req, res) => {
@@ -29,11 +51,11 @@ router.post('/login', (req, res) => {
     }
     const adminName = name || eid;
     const r = db.prepare("INSERT INTO users (employee_id, name, role, level) VALUES (?, ?, 'admin', 'mid')").run(eid, adminName);
-    const user = db.prepare(`${userSql} WHERE u.id = ?`).get(r.lastInsertRowid);
+    const user = withTeams(db.prepare(`${userSql} WHERE u.id = ?`).get(r.lastInsertRowid));
     return res.status(201).json({ user });
   }
 
-  const user = db.prepare(`${userSql} WHERE u.employee_id = ?`).get(eid);
+  const user = withTeams(db.prepare(`${userSql} WHERE u.employee_id = ?`).get(eid));
   if (!user) return res.status(401).json({ error: '工号不存在，请联系管理员添加账号' });
 
   res.json({ user });
@@ -49,7 +71,7 @@ router.get('/me', requireAuth, (req, res) => {
 function requireAuth(req, res, next) {
   const eid = req.headers['x-employee-id'];
   if (!eid) return res.status(401).json({ error: '未登录' });
-  const user = db.prepare(`${userSql} WHERE u.employee_id = ?`).get(eid);
+  const user = withTeams(db.prepare(`${userSql} WHERE u.employee_id = ?`).get(eid));
   if (!user) return res.status(401).json({ error: '账号不存在' });
   req.currentUser = user;
   next();
