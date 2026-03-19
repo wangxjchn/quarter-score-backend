@@ -1,16 +1,25 @@
 const express = require('express');
-const cors    = require('cors');
+const cors = require('cors');
+require('dotenv').config();
 
-require('./db'); // 初始化数据库与表结构
+const { initializeDatabase } = require('./db-mysql'); // 改用 MySQL
 
 const { router: authRouter } = require('./routes/auth');
 const teamsRouter      = require('./routes/teams');
 const usersRouter      = require('./routes/users');
 const jobTitlesRouter  = require('./routes/job-titles');
 
-const app = express();
-app.use(cors());
-app.use(express.json());
+// 异步启动函数
+async function startServer() {
+  try {
+    // 1. 初始化数据库（自动创建表）
+    await initializeDatabase();
+    
+    console.log('数据库初始化成功，启动 Express 服务器...');
+    
+    const app = express();
+    app.use(cors());
+    app.use(express.json());
 
 // ─── 认证 ────────────────────────────────────────────
 app.use('/api/auth',  authRouter);
@@ -24,4 +33,16 @@ app.use('/api/job-titles', jobTitlesRouter);
 app.get('/api/health', (req, res) => res.json({ status: 'ok' }));
 
 const PORT = process.env.PORT || 3000;
-app.listen(PORT, () => console.log(`Server running on port ${PORT}`));
+app.listen(PORT, () => {
+  console.log(`🚀 服务器运行在端口 ${PORT}`);
+  console.log(`📡 API 地址：http://localhost:${PORT}`);
+  console.log(`💾 数据库：MySQL - ${process.env.DB_NAME}`);
+});
+
+  } catch (error) {
+    console.error('💥 服务器启动失败:', error);
+    process.exit(1);
+  }
+}
+
+startServer();
