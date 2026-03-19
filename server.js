@@ -5,9 +5,10 @@ require('dotenv').config();
 const { initializeDatabase } = require('./db-mysql'); // 改用 MySQL
 
 const { router: authRouter } = require('./routes/auth');
-const teamsRouter      = require('./routes/teams');
-const usersRouter      = require('./routes/users');
-const jobTitlesRouter  = require('./routes/job-titles');
+const teamsRouter       = require('./routes/teams');
+const usersRouter       = require('./routes/users');
+const jobTitlesRouter   = require('./routes/job-titles');
+const jobLevelsRouter   = require('./routes/job-levels'); // 新增职级管理
 
 // 异步启动函数
 async function startServer() {
@@ -22,12 +23,13 @@ async function startServer() {
     app.use(express.json());
 
 // ─── 认证 ────────────────────────────────────────────
-app.use('/api/auth',  authRouter);
+app.use('/api/auth',        authRouter);
 
 // ─── 小组 / 员工 ─────────────────────────────────────
-app.use('/api/teams',      teamsRouter);
-app.use('/api/users',      usersRouter);
-app.use('/api/job-titles', jobTitlesRouter);
+app.use('/api/teams',       teamsRouter);
+app.use('/api/users',       usersRouter);
+app.use('/api/job-titles',  jobTitlesRouter);
+app.use('/api/job-levels',  jobLevelsRouter); // 新增职级管理
 
 // ─── 健康检查 ─────────────────────────────────────────
 app.get('/api/health', (req, res) => res.json({ status: 'ok' }));

@@ -62,8 +62,8 @@ function normalizeTeamIds(body) {
 async function validateTeamIds(teamIds) {
   if (teamIds.length === 0) return true;
   const placeholders = teamIds.map(() => '?').join(',');
-  const result = await getOne(`SELECT COUNT(*) AS c FROM teams WHERE id IN (${placeholders})`, ...teamIds);
-  return result.c === teamIds.length;
+  const result = await getOne(`SELECT COUNT(*) AS c FROM teams WHERE id IN (${placeholders})`, teamIds);
+  return Number(result.c) === teamIds.length;
 }
 
 async function syncUserTeams(userId, teamIds) {

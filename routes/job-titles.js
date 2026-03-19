@@ -6,7 +6,12 @@ const { requireAuth, requireAdmin } = require('./auth');
 // GET /api/job-titles
 router.get('/', requireAuth, async (req, res) => {
   try {
-    const titles = await getAll('SELECT * FROM job_titles ORDER BY name');
+    const titles = await getAll(`
+      SELECT jt.*, jl.name as level_name, jl.code as level_code
+      FROM job_titles jt
+      LEFT JOIN job_levels jl ON jt.level_id = jl.id
+      ORDER BY jt.name
+    `);
     res.json(titles);
   } catch (error) {
     console.error('获取职称列表失败:', error);
@@ -16,12 +21,26 @@ router.get('/', requireAuth, async (req, res) => {
 
 // POST /api/job-titles
 router.post('/', requireAuth, requireAdmin, async (req, res) => {
-  const name = (req.body.name || '').trim();
+  const { name, level_id } = req.body;
+  
   if (!name) return res.status(400).json({ error: '职称名称不能为空' });
   
   try {
-    const result = await query('INSERT INTO job_titles (name) VALUES (?)', [name]);
-    const title = await getOne('SELECT * FROM job_titles WHERE id = ?', [result.insertId]);
+    // 如果提供了 level_id，验证其存在性
+    if (level_id) {
+      const levelExists = await getOne('SELECT id FROM job_levels WHERE id = ?', [level_id]);
+      if (!levelExists) {
+        return res.status(400).json({ error: '指定的职级不存在' });
+      }
+    }
+    
+    const result = await query('INSERT INTO job_titles (name, level_id) VALUES (?, ?)', [name, level_id || null]);
+    const title = await getOne(`
+      SELECT jt.*, jl.name as level_name, jl.code as level_code
+      FROM job_titles jt
+      LEFT JOIN job_levels jl ON jt.level_id = jl.id
+      WHERE jt.id = ?
+    `, [result.insertId]);
     res.status(201).json(title);
   } catch (e) {
     if (e.code === 'ER_DUP_ENTRY') return res.status(400).json({ error: '职称已存在' });
@@ -33,7 +52,7 @@ router.post('/', requireAuth, requireAdmin, async (req, res) => {
 // PUT /api/job-titles/:id
 router.put('/:id', requireAuth, requireAdmin, async (req, res) => {
   const id   = Number(req.params.id);
-  const name = (req.body.name || '').trim();
+  const { name, level_id } = req.body;
   
   if (!name) return res.status(400).json({ error: '职称名称不能为空' });
   
@@ -43,8 +62,21 @@ router.put('/:id', requireAuth, requireAdmin, async (req, res) => {
   }
   
   try {
-    await query('UPDATE job_titles SET name = ? WHERE id = ?', [name, id]);
-    const title = await getOne('SELECT * FROM job_titles WHERE id = ?', [id]);
+    // 如果提供了 level_id，验证其存在性
+    if (level_id) {
+      const levelExists = await getOne('SELECT id FROM job_levels WHERE id = ?', [level_id]);
+      if (!levelExists) {
+        return res.status(400).json({ error: '指定的职级不存在' });
+      }
+    }
+    
+    await query('UPDATE job_titles SET name = ?, level_id = ? WHERE id = ?', [name, level_id || null, id]);
+    const title = await getOne(`
+      SELECT jt.*, jl.name as level_name, jl.code as level_code
+      FROM job_titles jt
+      LEFT JOIN job_levels jl ON jt.level_id = jl.id
+      WHERE jt.id = ?
+    `, [id]);
     res.json(title);
   } catch (e) {
     if (e.code === 'ER_DUP_ENTRY') return res.status(400).json({ error: '职称已存在' });

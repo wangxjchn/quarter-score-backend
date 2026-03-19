@@ -1,4 +1,5 @@
 const mysql = require('mysql2/promise');
+
 require('dotenv').config();
 
 let pool = null;
@@ -76,11 +77,27 @@ async function initializeDatabase() {
         FOREIGN KEY (team_id) REFERENCES teams(id) ON DELETE CASCADE
       ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
+      -- 职级表（新增）
+      CREATE TABLE IF NOT EXISTS job_levels (
+        id INT AUTO_INCREMENT PRIMARY KEY,
+        name VARCHAR(100) NOT NULL UNIQUE,
+        code VARCHAR(50) NOT NULL UNIQUE,
+        base_coefficient DECIMAL(4,2) NOT NULL DEFAULT 1.0,
+        description VARCHAR(500),
+        sort_order INT DEFAULT 0,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+        INDEX idx_code (code)
+      ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
       -- 职称表
       CREATE TABLE IF NOT EXISTS job_titles (
         id INT AUTO_INCREMENT PRIMARY KEY,
         name VARCHAR(255) NOT NULL UNIQUE,
-        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        level_id INT,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        FOREIGN KEY (level_id) REFERENCES job_levels(id) ON DELETE SET NULL,
+        INDEX idx_level_id (level_id)
       ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
     `);
 
@@ -89,7 +106,17 @@ async function initializeDatabase() {
     // 重新启用外键检查
     await connection.query('SET FOREIGN_KEY_CHECKS = 1');
 
-    // 插入默认职级系数
+    // 插入默认职级
+    await connection.query(`
+      INSERT INTO job_levels (name, code, base_coefficient, description, sort_order) VALUES
+        ('初级', 'junior', 1.1, '初级职称，适用于入职 1-3 年的员工', 1),
+        ('中级', 'mid', 1.0, '中级职称，适用于入职 3-5 年的员工', 2),
+        ('高级', 'senior', 0.9, '高级职称，适用于入职 5 年以上的员工', 3)
+      ON DUPLICATE KEY UPDATE name=name
+    `);
+    console.log('✅ 默认职级已插入');
+
+    // 插入默认职级系数（保留向后兼容）
     await connection.query(`
       INSERT INTO level_coefficients (level, coefficient) VALUES
         ('junior', 1.1),
@@ -128,6 +155,32 @@ async function initializeDatabase() {
     });
 
     console.log('✅ 数据库连接池已创建');
+    
+    // 数据迁移检查 - 使用连接池
+    try {
+      const checkColumn = await getOne(`
+        SELECT COLUMN_NAME 
+        FROM INFORMATION_SCHEMA.COLUMNS 
+        WHERE TABLE_SCHEMA = ? AND TABLE_NAME = 'job_titles' AND COLUMN_NAME = 'level_id'
+      `, [dbName]);
+      
+      if (!checkColumn) {
+        console.log('📝 为 job_titles 添加 level_id 字段...');
+        // 使用 pool.execute 而不是 connection.query
+        await query(`
+          ALTER TABLE job_titles 
+          ADD COLUMN level_id INT,
+          ADD FOREIGN KEY (level_id) REFERENCES job_levels(id) ON DELETE SET NULL,
+          ADD INDEX idx_level_id (level_id)
+        `);
+        console.log('✅ job_titles.level_id 字段已添加');
+      } else {
+        console.log('ℹ️ level_id 字段已存在，无需迁移');
+      }
+    } catch (error) {
+      console.log('⚠️ 数据迁移检查完成:', error.message);
+    }
+    
     console.log('🎉 数据库初始化完成！\n');
 
   } catch (error) {
