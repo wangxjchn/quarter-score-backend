@@ -39,7 +39,16 @@ async function initializeDatabase() {
     // 创建所有表
     console.log('📋 创建数据表...');
     await connection.query(`
-      -- 小组表
+      -- 职能表（新增）
+      CREATE TABLE IF NOT EXISTS departments (
+        id INT AUTO_INCREMENT PRIMARY KEY,
+        name VARCHAR(255) NOT NULL UNIQUE,
+        description VARCHAR(500),
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+      ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+      -- 小组表（群组）
       CREATE TABLE IF NOT EXISTS teams (
         id INT AUTO_INCREMENT PRIMARY KEY,
         name VARCHAR(255) NOT NULL UNIQUE,
@@ -54,9 +63,12 @@ async function initializeDatabase() {
         role VARCHAR(20) NOT NULL DEFAULT 'employee',
         level VARCHAR(20) NOT NULL DEFAULT 'mid',
         title_id INT,
+        department_id INT,
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
         INDEX idx_employee_id (employee_id),
-        INDEX idx_title_id (title_id)
+        INDEX idx_title_id (title_id),
+        INDEX idx_department_id (department_id),
+        FOREIGN KEY (department_id) REFERENCES departments(id) ON DELETE SET NULL
       ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
       -- 职级系数表
@@ -67,6 +79,7 @@ async function initializeDatabase() {
         updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
       ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
+      -- 员工 - 职能关系表（一对一，通过 users.department_id 实现）
       -- 员工 - 小组关系表（多对多）
       CREATE TABLE IF NOT EXISTS user_teams (
         user_id INT NOT NULL,
@@ -136,6 +149,31 @@ async function initializeDatabase() {
       console.log('✅ 历史数据已迁移到 user_teams 表');
     } catch (e) {
       console.log('ℹ️ 无需数据迁移或 team_id 字段不存在');
+    }
+
+    // 添加 department_id 字段（如果不存在）
+    try {
+      // 先检查字段是否存在
+      const [columns] = await connection.query(
+        "SELECT COLUMN_NAME FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_SCHEMA = ? AND TABLE_NAME = 'users' AND COLUMN_NAME = 'department_id'",
+        [dbName]
+      );
+      
+      if (columns.length === 0) {
+        // 字段不存在，添加
+        await connection.query(`
+          ALTER TABLE users 
+          ADD COLUMN department_id INT,
+          ADD INDEX idx_department_id (department_id),
+          ADD FOREIGN KEY (department_id) REFERENCES departments(id) ON DELETE SET NULL
+        `);
+        console.log('✅ department_id 字段已添加');
+      } else {
+        console.log('ℹ️ department_id 字段已存在');
+      }
+    } catch (e) {
+      console.error('添加 department_id 字段失败:', e);
+      throw e;
     }
 
     await connection.end();

@@ -5,7 +5,21 @@ const { requireAuth, requireAdmin } = require('./auth');
 
 const ROLES  = ['admin', 'leader', 'employee'];
 const LEVELS = ['junior', 'mid', 'senior'];
-const sel    = `SELECT u.id, u.employee_id, u.name, u.role, u.level, u.title_id, u.created_at FROM users u`;
+const sel    = `SELECT u.id, u.employee_id, u.name, u.role, u.level, u.title_id, u.department_id, u.created_at FROM users u`;
+
+async function withDepartment(user) {
+  if (!user) return null;
+  let department_name = null;
+  let department_code = null;
+  if (user.department_id) {
+    const dept = await getOne('SELECT name FROM departments WHERE id = ?', [user.department_id]);
+    department_name = dept?.name || null;
+  }
+  return {
+    ...user,
+    department_name,
+  };
+}
 
 async function withTeams(user) {
   if (!user) return null;
@@ -30,6 +44,7 @@ async function withTeams(user) {
     team_names,
     team_name: team_names[0] || null,
     title_name,
+    ...await withDepartment(user),
   };
 }
 
@@ -98,10 +113,11 @@ router.get('/:id', requireAuth, async (req, res) => {
 // POST /api/users
 router.post('/', requireAuth, requireAdmin, async (req, res) => {
   try {
-    const { employee_id, name, role = 'employee', level = 'mid', title_id } = req.body;
+    const { employee_id, name, role = 'employee', level = 'mid', title_id, department_id } = req.body;
     const eid     = (employee_id || '').trim();
     const nm      = (name || '').trim();
     const titleId = title_id ? Number(title_id) : null;
+    const deptId = department_id ? Number(department_id) : null;
     const teamIds = normalizeTeamIds(req.body);
     
     if (!eid)              return res.status(400).json({ error: '工号不能为空' });
@@ -111,9 +127,17 @@ router.post('/', requireAuth, requireAdmin, async (req, res) => {
     if (teamIds === null)         return res.status(400).json({ error: '小组参数无效' });
     if (!await validateTeamIds(teamIds)) return res.status(400).json({ error: '存在无效的小组' });
     
+    // 验证职能是否存在（如果指定了）
+    if (deptId) {
+      const deptExists = await getOne('SELECT id FROM departments WHERE id = ?', [deptId]);
+      if (!deptExists) {
+        return res.status(400).json({ error: '指定的职能不存在' });
+      }
+    }
+    
     const result = await query(
-      'INSERT INTO users (employee_id, name, role, level, title_id) VALUES (?, ?, ?, ?, ?)',
-      [eid, nm, role, level, titleId]
+      'INSERT INTO users (employee_id, name, role, level, title_id, department_id) VALUES (?, ?, ?, ?, ?, ?)',
+      [eid, nm, role, level, titleId, deptId]
     );
     
     await syncUserTeams(Number(result.insertId), teamIds);
@@ -135,25 +159,38 @@ router.put('/:id', requireAuth, requireAdmin, async (req, res) => {
       return res.status(404).json({ error: '用户不存在' });
     }
     
-    const { employee_id, name, role = 'employee', level = 'mid', title_id } = req.body;
+    const { employee_id, name, role = 'employee', level = 'mid', title_id, department_id } = req.body;
     const eid     = (employee_id || '').trim();
     const nm      = (name || '').trim();
     const titleId = title_id ? Number(title_id) : null;
-    const teamIds = normalizeTeamIds(req.body);
+    const deptId = department_id ? Number(department_id) : null;
     
     if (!eid)              return res.status(400).json({ error: '工号不能为空' });
     if (!nm)               return res.status(400).json({ error: '姓名不能为空' });
     if (!ROLES.includes(role))   return res.status(400).json({ error: '角色值无效' });
     if (!LEVELS.includes(level)) return res.status(400).json({ error: '职级值无效' });
-    if (teamIds === null)         return res.status(400).json({ error: '小组参数无效' });
-    if (!await validateTeamIds(teamIds)) return res.status(400).json({ error: '存在无效的小组' });
+    
+    // 验证职能是否存在（如果指定了）
+    if (deptId) {
+      const deptExists = await getOne('SELECT id FROM departments WHERE id = ?', [deptId]);
+      if (!deptExists) {
+        return res.status(400).json({ error: '指定的职能不存在' });
+      }
+    }
     
     await query(
-      'UPDATE users SET employee_id=?, name=?, role=?, level=?, title_id=? WHERE id=?',
-      [eid, nm, role, level, titleId, id]
+      'UPDATE users SET employee_id=?, name=?, role=?, level=?, title_id=?, department_id=? WHERE id=?',
+      [eid, nm, role, level, titleId, deptId, id]
     );
     
-    await syncUserTeams(id, teamIds);
+    // 仅当请求中提供了 team_ids 参数时才更新群组关系
+    if ('team_ids' in req.body) {
+      const teamIds = normalizeTeamIds(req.body);
+      if (teamIds === null) return res.status(400).json({ error: '小组参数无效' });
+      if (!await validateTeamIds(teamIds)) return res.status(400).json({ error: '存在无效的小组' });
+      await syncUserTeams(id, teamIds);
+    }
+    
     const user = await withTeams(await getOne(`${sel} WHERE u.id = ?`, [id]));
     res.json(user);
   } catch (e) {

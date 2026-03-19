@@ -75,7 +75,7 @@ router.get('/:id/members', requireAuth, async (req, res) => {
   
   try {
     const members = await getAll(`
-      SELECT u.id, u.employee_id, u.name, u.role, u.level, jt.name AS title_name
+      SELECT u.id, u.employee_id, u.name, u.role, u.title_id, u.department_id, jt.name AS title_name
       FROM users u
       JOIN user_teams ut ON ut.user_id = u.id
       LEFT JOIN job_titles jt ON jt.id = u.title_id

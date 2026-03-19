@@ -5,6 +5,7 @@ require('dotenv').config();
 const { initializeDatabase } = require('./db-mysql'); // 改用 MySQL
 
 const { router: authRouter } = require('./routes/auth');
+const departmentsRouter   = require('./routes/departments'); // 新增职能管理
 const teamsRouter       = require('./routes/teams');
 const usersRouter       = require('./routes/users');
 const jobTitlesRouter   = require('./routes/job-titles');
@@ -25,7 +26,8 @@ async function startServer() {
 // ─── 认证 ────────────────────────────────────────────
 app.use('/api/auth',        authRouter);
 
-// ─── 小组 / 员工 ─────────────────────────────────────
+// ─── 职能 / 小组 / 员工 ───────────────────────────────
+app.use('/api/departments', departmentsRouter); // 新增职能管理
 app.use('/api/teams',       teamsRouter);
 app.use('/api/users',       usersRouter);
 app.use('/api/job-titles',  jobTitlesRouter);
